@@ -152,6 +152,7 @@ static int init_port(uint16_t port_num)
         RTE_LOG(ERR, INIT, "Could not configure port %d\n", port_num);
         return retval;
     }
+    //RTE_LOG(INFO, INIT, "Configuration good on port %d\n", port_num);
 
     // Adjust the number of descriptors
     retval = rte_eth_dev_adjust_nb_rx_tx_desc(port_num, &rx_ring_size, &tx_ring_size);
@@ -159,6 +160,7 @@ static int init_port(uint16_t port_num)
         RTE_LOG(ERR, INIT, "Could not adjust rx/tx descriptors on port %d\n", port_num);
         return retval;
     }
+    //RTE_LOG(INFO, INIT, "Adjusted rx/tx descriptors on port %d\n", port_num);
 
     // Setup the RX queues
     for (q = 0; q < rx_rings; q++) {
@@ -168,6 +170,7 @@ static int init_port(uint16_t port_num)
             RTE_LOG(ERR, INIT, "Could not setup RX queue %d on port %d\n", q, port_num);
             return retval;
         }
+        RTE_LOG(INFO, INIT, "Setup up RX queue %d on port %d\n", q, port_num);
     }
 
     // Setup the TX queues
@@ -178,6 +181,7 @@ static int init_port(uint16_t port_num)
             RTE_LOG(ERR, INIT, "Could not setup TX queue %d on port %d\n", q, port_num);
             return retval;
         }
+        RTE_LOG(INFO, INIT, "Setup up TX queue %d on port %d\n", q, port_num);
     }
 
     // Enable promiscuous mode
@@ -193,8 +197,14 @@ static int init_port(uint16_t port_num)
         RTE_LOG(ERR, INIT, "Could not start port %d\n", port_num);
         return retval;
     }
+    retval = rte_eth_dev_set_link_up(port_num);
+    if (retval < 0) {
+        RTE_LOG(ERR, INIT, "Could not set link up on port %d\n", port_num);
+        return retval;
+    }
 
-    RTE_LOG(INFO, INIT, "Initialized port %d.\n", port_num);
+    check_port_link_status(port_num);    
+    RTE_LOG(INFO, INIT, "Initialized and set up port %d.\n", port_num);
     return 0;
 }
 
@@ -263,18 +273,20 @@ static int init_exchange_slots(void)
         RTE_LOG(ERR, INIT, "Cannot allocate memory for exchange slots\n");
         return -1;
     }
-
     // Create a rte_ring for each RX and TX slot
     for (i = 0; i < NUM_SOCKETS_MAX; i++) {
         q_name = get_exch_ring_name(i, EXCH_RING_RX);
         exch_slots[i].rx_q = rte_ring_create(q_name, EXCH_RING_SIZE, socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
+        //RTE_LOG(INFO, INIT, "Allocated memory for exchange slots, rx queue name is %s for socket %d\n", q_name, socket_id);
         q_name = get_exch_ring_name(i, EXCH_RING_TX);
         exch_slots[i].tx_q = rte_ring_create(q_name, EXCH_RING_SIZE, socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
+        //RTE_LOG(INFO, INIT, "Allocated memory for exchange slots, tx name is %s for socket %d\n", q_name, socket_id);
         if (exch_slots[i].rx_q == NULL || exch_slots[i].tx_q == NULL) {
             RTE_LOG(ERR, INIT, "Cannot create exchange RX/TX exchange rings (index %d)\n", i);
             return -1;
         }
     }
+    
     return 0;
 }
 
@@ -293,6 +305,7 @@ int udpdk_init(int argc, char *argv[])
     poller_pid = fork();
     if (poller_pid != 0) {  // parent -> application
         // Initialize EAL (returns how many arguments it consumed)
+        RTE_LOG(INFO, INIT, "In parent doing main EAL initialization\n");
         if (rte_eal_init(primary_argc, (char **)primary_argv) < 0) {
             RTE_LOG(ERR, INIT, "Cannot initialize EAL\n");
             return -1;
@@ -314,7 +327,7 @@ int udpdk_init(int argc, char *argv[])
             RTE_LOG(ERR, INIT, "Cannot initialize RX port %d\n", PORT_RX);
             return -1;
         }
-        check_port_link_status(PORT_RX);
+        //check_port_link_status(PORT_RX);
 
         if (PORT_TX != PORT_RX) {
             retval = init_port(PORT_TX);
@@ -322,8 +335,9 @@ int udpdk_init(int argc, char *argv[])
                 RTE_LOG(ERR, INIT, "Cannot initialize TX port %d\n", PORT_TX);
                 return -1;
             }
-            check_port_link_status(PORT_TX);
+            //check_port_link_status(PORT_TX);
         } else {
+            //check_port_link_status(PORT_TX);
             RTE_LOG(INFO, INIT, "Using the same port for RX and TX\n");
         }
 
@@ -359,7 +373,10 @@ int udpdk_init(int argc, char *argv[])
         // Wait for the poller to be fully initialized
         RTE_LOG(INFO, INIT, "Waiting for the poller to complete its inialization...\n");
         ipc_wait_for_poller();
+        RTE_LOG(INFO, INIT, "Poller initialized\n");
+
     } else {  // child -> packet poller
+        RTE_LOG(INFO, INIT, "In child doing poller EAL initialization\n");
         if (poller_init(secondary_argc, (char **)secondary_argv) < 0) {
             RTE_LOG(INFO, INIT, "Poller initialization failed\n");
             return -1;

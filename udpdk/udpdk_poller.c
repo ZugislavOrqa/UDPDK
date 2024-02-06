@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
 #include <rte_common.h>
 #include <rte_eal.h>
@@ -180,12 +181,16 @@ static int setup_exch_zone(void)
             RTE_LOG(ERR, POLLINIT, "Failed to retrieve rx ring queue for exchanger %u\n", i);
             return -1;
         }
+        //RTE_LOG(INFO, POLLINIT, "Retrieve memory for exchange slots, RX queue name is %s, size is %d\n", exch_slots[i].rx_q->name, exch_slots[i].rx_q->size);
+
         // Retrieve the TX queue for each slot
         exch_slots[i].tx_q = rte_ring_lookup(get_exch_ring_name(i, EXCH_RING_TX));
         if (exch_slots[i].tx_q == NULL) {
             RTE_LOG(ERR, POLLINIT, "Failed to retrieve tx ring queue for exchanger %u\n", i);
             return -1;
         }
+        //RTE_LOG(INFO, POLLINIT, "Retrieve memory for exchange slots, TX queue name is %s, size is %d\n", exch_slots[i].tx_q->name, exch_slots[i].tx_q->size);
+
         // rx_buffer and rx_count are already zeroed thanks to zmalloc
     }
 
@@ -330,11 +335,11 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
     rxq = &qconf->rx_queue;
 
     eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+    //RTE_LOG(INFO, POLLBODY, "packet type is %d, data len is %d, packet port is %d\n", m->packet_type, m->data_len, m->port);
 
     if (RTE_ETH_IS_IPV4_HDR(m->packet_type)) {
 
         ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-
         if (rte_ipv4_frag_pkt_is_fragmented(ip_hdr)) {
             struct rte_mbuf *mo;
 
@@ -347,10 +352,11 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
 
             // Handle this fragment (returns # of fragments if all already received, NULL otherwise)
             mo = rte_ipv4_frag_reassemble_packet(tbl, dr, m, tms, ip_hdr);
-            if (mo == NULL)
+            if (mo == NULL){
+                RTE_LOG(INFO, POLLBODY, "More fragments needed...\n");
                 // More fragments needed...
                 return;
-
+            }
             // Reassembled packet (update pointers to headers if needed)
             if (mo != m) {
                 m = mo;
@@ -359,7 +365,19 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
                 // TODO must fix the IP header checksum as done in ip-sec example
             }
         }
-    } else {
+    }
+    else if (m->packet_type & RTE_PTYPE_L2_ETHER){
+        //Added to see what to do if we get eth packet so we can now it came
+        ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
+        RTE_LOG(INFO, POLLBODY, "Packet was ethernet type and protocl id is %d\n", ip_hdr->next_proto_id);
+
+        enqueue_rx_packet(queue, m);
+        m = rte_pktmbuf_clone(m, rxq->pool);
+
+        rte_pktmbuf_free(m);
+        return;
+    }
+    else {
         RTE_LOG(WARNING, POLLBODY, "Received non-IPv4 packet, showing content below:\n");
         udpdk_dump_mbuf(m);
         return;
@@ -369,13 +387,26 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
         RTE_LOG(WARNING, POLLBODY, "Received non-UDP packet.\n");
         return;
     }
+    
+    struct in_addr addr;
     udp_dst_port = get_udp_dst_port((struct rte_udp_hdr *)(ip_hdr + 1));
     ip_dst_addr = get_ipv4_dst_addr(ip_hdr);
+    addr.s_addr = udp_dst_port;
+    
+    //RTE_LOG(INFO, POLLBODY, "UDP destination port is %d\n",htons(udp_dst_port));
+    unsigned long networkAddress = htonl(ip_dst_addr);
+    addr.s_addr = networkAddress;
+
+    // Use inet_ntoa to convert network byte order to string
+    char* ipString = inet_ntoa(addr);
+    
+    //RTE_LOG(INFO, POLLBODY, "UDP IP destination adrress is (read in reverse) %s\n", ipString);
 
     // Find the sock_ids corresponding to the UDP dst port (L4 switching) and enqueue the packet to its queue
     udpdk_list_t *binds = btable_get_bindings(udp_dst_port);
     if (binds == NULL) {
-        RTE_LOG(WARNING, POLLBODY, "Dropping packet for port %d: no socket bound\n", ntohs(udp_dst_port));
+        addr.s_addr = udp_dst_port;
+        RTE_LOG(WARNING, POLLBODY, "Dropping packet for port %d: no socket bound\n", htons(udp_dst_port));
         return;
     }
     udpdk_list_iterator_t *it = list_iterator_new(binds, LIST_HEAD);
@@ -528,18 +559,17 @@ void poller_body(void)
                 reassemble(rx_mbuf_table[j], PORT_RX, QUEUE_RX, qconf, cur_tsc);
             }
 
+            //RTE_LOG(INFO, POLLBODY, "j = %d, rx_count = %d\n", j,rx_count);
             // Reassemble the second batch of fragments
             for (; j < rx_count; j++) {
                 reassemble(rx_mbuf_table[j], PORT_RX, QUEUE_RX, qconf, cur_tsc);
             }
-
             // Effectively flush the packets to exchange buffers
             for (i = 0; i < NUM_SOCKETS_MAX; i++) {
                 if (exch_zone_desc->slots[i].used) {
                     flush_rx_queue(i);
                 }
             }
-
             // Free death row
             rte_ip_frag_free_death_row(&qconf->death_row, PREFETCH_OFFSET);
         }

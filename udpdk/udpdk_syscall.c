@@ -103,6 +103,14 @@ static int getsetsockopt_validate_args(int sockfd, int level, int optname,
             break;
         case SO_REUSEPORT:
             break;
+        case SO_RCVTIMEO:
+            break;
+        case SO_BINDTODEVICE:
+            break;
+        case SO_BUSY_POLL:
+            break;
+        case SO_PRIORITY:
+            break; 
         default:
             errno = ENOPROTOOPT;
             RTE_LOG(ERR, SYSCALL, "Invalid or unsupported option %d at level %d\n", optname, level);
@@ -134,6 +142,18 @@ int udpdk_getsockopt(int sockfd, int level, int optname, void *optval, socklen_t
                     break;
                 case SO_REUSEPORT:
                     *(int *)optval = ((exch_zone_desc->slots[sockfd].so_options & SO_REUSEPORT) != 0);
+                    break;
+                case SO_RCVTIMEO:
+                    *(int *)optval = ((exch_zone_desc->slots[sockfd].so_options & SO_RCVTIMEO) != 0);
+                    break;
+                case SO_BINDTODEVICE:
+                    *(int *)optval = ((exch_zone_desc->slots[sockfd].so_options & SO_BINDTODEVICE) != 0);
+                    break;
+                case SO_BUSY_POLL:
+                    *(int *)optval = ((exch_zone_desc->slots[sockfd].so_options & SO_BUSY_POLL) != 0);
+                    break;
+                case SO_PRIORITY:
+                    *(int *)optval = ((exch_zone_desc->slots[sockfd].so_options & SO_PRIORITY) != 0);
                     break;
                 default:
                     errno = ENOPROTOOPT;
@@ -175,6 +195,38 @@ int udpdk_setsockopt(int sockfd, int level, int optname, const void *optval, soc
                         exch_zone_desc->slots[sockfd].so_options |= SO_REUSEPORT;
                     } else if ((*(int *)optval == 0) && (prev_set)) {   // reset
                         exch_zone_desc->slots[sockfd].so_options &= ~SO_REUSEPORT;
+                    }
+                    break;
+                case SO_RCVTIMEO:
+                    prev_set = exch_zone_desc->slots[sockfd].so_options & SO_RCVTIMEO;
+                    if ((*(int *)optval != 0) && (!prev_set)) {         // set
+                        exch_zone_desc->slots[sockfd].so_options |= SO_RCVTIMEO;
+                    } else if ((*(int *)optval == 0) && (prev_set)) {   // reset
+                        exch_zone_desc->slots[sockfd].so_options &= ~SO_RCVTIMEO;
+                    }
+                    break;
+                case SO_BUSY_POLL:
+                    prev_set = exch_zone_desc->slots[sockfd].so_options & SO_BUSY_POLL;
+                    if ((*(int *)optval != 0) && (!prev_set)) {         // set
+                        exch_zone_desc->slots[sockfd].so_options |= SO_BUSY_POLL;
+                    } else if ((*(int *)optval == 0) && (prev_set)) {   // reset
+                        exch_zone_desc->slots[sockfd].so_options &= ~SO_BUSY_POLL;
+                    }
+                    break;
+                case SO_BINDTODEVICE:
+                    prev_set = exch_zone_desc->slots[sockfd].so_options & SO_BINDTODEVICE;
+                    if ((*(int *)optval != 0) && (!prev_set)) {         // set
+                        exch_zone_desc->slots[sockfd].so_options |= SO_BINDTODEVICE;
+                    } else if ((*(int *)optval == 0) && (prev_set)) {   // reset
+                        exch_zone_desc->slots[sockfd].so_options &= ~SO_BINDTODEVICE;
+                    }
+                    break;
+                case SO_PRIORITY:
+                    prev_set = exch_zone_desc->slots[sockfd].so_options & SO_PRIORITY;
+                    if ((*(int *)optval != 0) && (!prev_set)) {         // set
+                        exch_zone_desc->slots[sockfd].so_options |= SO_PRIORITY;
+                    } else if ((*(int *)optval == 0) && (prev_set)) {   // reset
+                        exch_zone_desc->slots[sockfd].so_options &= ~SO_PRIORITY;
                     }
                     break;
                 default:
@@ -250,12 +302,14 @@ static int sendto_validate_args(int sockfd, const void *buf, size_t len, int fla
     // Ensure sockfd is not beyond max limit
     if (sockfd >= NUM_SOCKETS_MAX) {
         errno = ENOTSOCK;
+        RTE_LOG(INFO, SYSCALL, "Sockfd check failed\n");
         return -1;
     }
 
     // Check if the sockfd is valid
     if (!exch_zone_desc->slots[sockfd].used) {
         errno = EBADF;
+        RTE_LOG(INFO, SYSCALL,"Sockfd check valid failed\n");
         return -1;
     }
 
@@ -264,12 +318,14 @@ static int sendto_validate_args(int sockfd, const void *buf, size_t len, int fla
     // Check if flags are supported (atm none is supported)
     if (flags != 0) {
         errno = EINVAL;
+        RTE_LOG(INFO, SYSCALL,"Flags check failed\n");
         return -1;
     }
 
     // Check if the sender is specified
     if (dest_addr == NULL || addrlen == 0) {
         errno = EINVAL;
+        RTE_LOG(INFO, SYSCALL,"Sender check failed\n");
         return -1;
     }
     return 0;
@@ -287,6 +343,7 @@ ssize_t udpdk_sendto(int sockfd, const void *buf, size_t len, int flags,
 
     // Validate the arguments
     if (sendto_validate_args(sockfd, buf, len, flags, dest_addr, addrlen) < 0) {
+        RTE_LOG(INFO, SYSCALL,"Validate failed\n");
         return -1;
     }
 
@@ -363,7 +420,7 @@ ssize_t udpdk_sendto(int sockfd, const void *buf, size_t len, int flags,
         rte_pktmbuf_free(pkt);
         return -1;
     }
-
+    //RTE_LOG(INFO, SYSCALL, "Send %d bytes\n", (int)len);
     return len;
 }
 
@@ -414,22 +471,27 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
     struct rte_ether_hdr *eth_hdr;
     struct rte_ipv4_hdr *ip_hdr;
     struct rte_udp_hdr *udp_hdr;
-
+    //RTE_LOG(INFO, SYSCALL,"Into UDPDK recvfrom\n");
     // Validate the arguments
     if (recvfrom_validate_args(sockfd, buf, len, flags, src_addr, addrlen) < 0) {
         return -1;
     }
 
+    //RTE_LOG(INFO, SYSCALL,"All args validated\n");
+    //int i = 0;
     // Dequeue one packet (busy wait until one is available)
     while (ret < 0 && !interrupted) {
+        //if (i < 100)RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUE rx queue name is %s, size is %d\n", exch_slots[sockfd].rx_q->name, exch_slots[sockfd].rx_q->size);
         ret = rte_ring_dequeue(exch_slots[sockfd].rx_q, (void **)&pkt);
+        //RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUE RET IS %d\n",ret);
+        //i++;
     }
+    //RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUED from sockfd %d and ret is %d\n",sockfd,ret);
     if (interrupted) {
         RTE_LOG(INFO, SYSCALL, "Recvfrom returning due to signal\n");
         errno = EINTR;
         return -1;
     }
-
     // Get some useful pointers to headers and data
     nb_segs = pkt->nb_segs;
     eth_hdr = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
@@ -452,9 +514,9 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
         rte_memcpy((void *)src_addr, &addr_in, eff_addrlen);
         *addrlen = eff_addrlen;
     }
-
     seg = pkt;
     for (int s = 0; s < nb_segs; s++) {
+        //RTE_LOG(INFO, SYSCALL,"s is %d, nb_segs is %d\n",s,nb_segs);
         // The the first segment includes eth + ipv4 + udp headers before the payload
         offset_payload = (s == 0) ?
                 sizeof(struct rte_ether_hdr) + sizeof(struct rte_ipv4_hdr) + sizeof(struct rte_udp_hdr) : 0;
@@ -464,12 +526,14 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
             // for very small packets, Ethernet payload is padded to 46 bytes
             seg_len = dgram_payl_len;
         }
+        //RTE_LOG(INFO, SYSCALL,"seg_len is %d\n",seg_len);
         // The amount of data to copy is the minimum between this segment length and the remaining requested bytes
         if (seg_len < bytes_left) {
             eff_len = seg_len;
         } else {
             eff_len = bytes_left;
         }
+        //RTE_LOG(INFO, SYSCALL,"copy payload to buffer\n");
         // Copy payload into buffer
         rte_memcpy(buf, rte_pktmbuf_mtod(seg, void *) + offset_payload, eff_len);
         // Adjust pointers and counters
@@ -480,9 +544,10 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
             break;
         }
     }
+    //RTE_LOG(INFO, SYSCALL,"Free mbuf\n");
     // Free the mbuf (with all the chained segments)
     rte_pktmbuf_free(pkt);
-
+    //RTE_LOG(INFO, SYSCALL,"Read %d bytes\n", (int)(len - bytes_left));
     // Return how many bytes read
     return len - bytes_left;
 }

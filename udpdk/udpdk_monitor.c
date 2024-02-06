@@ -19,12 +19,12 @@
 
 /* Show information about the current state of a DPDK port */
 void check_port_link_status(uint16_t portid) {
-#define CHECK_INTERVAL 100  // 100ms
-#define MAX_CHECK_TIME 90   // how many times
+#define CHECK_INTERVAL 1000  // 1000ms
+#define MAX_CHECK_TIME 50    // how many times
     uint8_t count, all_ports_up, print_flag = 0;
     struct rte_eth_link link;
     int ret;
-
+    print_flag = 1;
     RTE_LOG(INFO, MONITOR, "Checking link status of port %d.\n", portid);
     for (count = 0; count <= MAX_CHECK_TIME; count++) {
         all_ports_up = 1;
@@ -43,6 +43,7 @@ void check_port_link_status(uint16_t portid) {
                 break;
             } else {
                 RTE_LOG(INFO, MONITOR, "Port %d Link Down\n", (uint8_t) portid);
+                // rte_eth_dev_set_link_up(portid);
             }
             continue;
         }

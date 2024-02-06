@@ -23,7 +23,7 @@ UDPDK_DPDK=${DEPSDIR}/dpdk/${RTE_TARGET}
 INIH=${DEPSDIR}/inih
 
 CFLAGS= -march=native -O2
-CFLAGS+= -Wall -Wno-deprecated-declarations -Werror -Wno-unused-variable
+CFLAGS+= -Wall -Wno-deprecated-declarations -Wno-unused-variable
 CFLAGS+= -fno-common -finline-limit=8000
 CFLAGS+= --param inline-unit-growth=100
 CFLAGS+= --param large-function-growth=1000

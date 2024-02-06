@@ -28,7 +28,7 @@ LIBS+= -Wl,--no-whole-archive -lrt -lm -ldl -lcrypto -pthread -lnuma
 
 CFLAGS += $(WERROR_FLAGS) -O3 $(shell $(ORQA_PKGCONF) --cflags libdpdk)
 
-TARGET="pingpong"
+TARGET="pingBoard"
 all:
 	cc -I${ROOTDIR}/udpdk -I${DEPSDIR}/dpdk/${RTE_TARGET}/include -o ${TARGET} ${SRCS} ${LIBS}
 
