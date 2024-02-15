@@ -39,6 +39,8 @@
 #define RTE_LOGTYPE_CLOSE RTE_LOGTYPE_USER1
 #define RTE_LOGTYPE_INTR RTE_LOGTYPE_USER1
 
+#define LOG_FILENAME "dpdk.log"
+
 extern int interrupted;
 extern struct exch_zone_info *exch_zone_desc;
 extern struct exch_slot *exch_slots;
@@ -55,9 +57,10 @@ extern struct rte_ring *ipc_app_to_pol;
 extern struct rte_ring *ipc_pol_to_app;
 extern struct rte_mempool *ipc_msg_pool;
 static pid_t poller_pid;
+FILE *rte_log_file;
 
-static struct rte_flow *dpdk_flow;
-static struct rte_flow *kernel_flow;
+// static struct rte_flow *dpdk_flow;
+// static struct rte_flow *kernel_flow;
 
 
 /* Get the name of the rings of exchange slots */
@@ -112,104 +115,120 @@ static int init_mbuf_pools(void)
 
     return 0;
 }
-static int create_flow_for_port(uint16_t port_num){
-    /* These would mostly be set from a function call */
-    uint16_t q;
-    struct rte_eth_dev_info dev_info;
-    struct rte_eth_txconf txconf;
 
-    if(!rte_eth_dev_is_valid_port(port_num))
-        return -1;
+static void print_mac(uint16_t portid)
+{
+	struct rte_ether_addr eth_addr;
+	char buf[RTE_ETHER_ADDR_FMT_SIZE];
 
-    rte_eth_dev_info_get(port_num, &dev_info);
+	rte_eth_macaddr_get(portid, &eth_addr);
+	rte_ether_format_addr(buf, sizeof(buf), &eth_addr);
 
-        /* Flow items */
-    struct rte_flow_item flow_pattern[4]; /* 4 parts: ethernet, ipv4, udp, end */
-
-    /* Ethernet Layer */
-    static struct rte_flow_item eth_item = {RTE_FLOW_ITEM_TYPE_ETH, 0, 0, 0};
-    flow_pattern[0] = eth_item;
-
-    /* IPv4 Layer */
-    struct rte_flow_item ipv4_item;
-    ipv4_item.type = RTE_FLOW_ITEM_TYPE_IPV4;
-    flow_pattern[1] = ipv4_item;
-
-    /* UDP Layer */
-    struct rte_flow_item udp_item;
-    udp_item.type = RTE_FLOW_ITEM_TYPE_UDP;
-    flow_pattern[2] = udp_item;
-
-    /* Terminate the pattern list */
-    static struct rte_flow_item end_item = {RTE_FLOW_ITEM_TYPE_END, 0, 0, 0};
-    flow_pattern[3] = end_item;
-
-    /* Flow actions */
-    struct rte_flow_action flow_actions[2];
-    static struct rte_flow_action_queue flow_action_queue_conf = {0}; // enqueue in queue 0
-    static struct rte_flow_action flow_action_queue = {
-        RTE_FLOW_ACTION_TYPE_QUEUE, &flow_action_queue_conf
-    };
-    flow_actions[0] = flow_action_queue;
-
-    /* Terminate flow action list */
-    static struct rte_flow_action flow_action_end = {RTE_FLOW_ACTION_TYPE_END, 0};
-    flow_actions[1] = flow_action_end;
-
-    /* Flow attributes */
-    static struct rte_flow_attr flow_attrs;
-    flow_attrs.ingress = 1;
-
-    /* Initialize flow isolation to forward messages to kernel network stack */
-    /* This will only work with bifurcated drivers */
-    struct rte_flow_error flow_errors;
-    rte_flow_isolate(port_num, 1, &flow_errors);
-
-    /* Validate flow */
-    /* This only works after configuring the port to forward to */
-    rte_flow_validate(port_num, &flow_attrs, flow_pattern, flow_actions, &flow_errors);
-
-    /* Start the Ethernet port. */
-    //rte_eth_dev_start(port);
-
-    /* Create the flow
-     This will only work after the queue was started */
-    dpdk_flow = rte_flow_create(port_num, &flow_attrs, flow_pattern, flow_actions, &flow_errors);
-
-    if (!dpdk_flow)
-        rte_exit(EXIT_FAILURE, "Failed to create DPDK flow rule %d, %s \n", flow_errors.type, flow_errors.message);
-  
-    RTE_LOG(ERR, INIT, "DPDK flow created!\n");
-
-    struct rte_flow_item flow_kernel_pattern[2];
-    flow_kernel_pattern[0] = eth_item;
-    flow_kernel_pattern[1] = end_item;
-
-    struct rte_flow_attr attr_other;
-    attr_other.ingress = 1;
-
-    struct rte_flow_action actions_other[2];
-    static struct rte_flow_action_phy_port flow_action_port_conf = {0};
-    flow_action_port_conf.index = 1;
-    static struct rte_flow_action flow_action_port = {
-        RTE_FLOW_ACTION_TYPE_PHY_PORT, &flow_action_port_conf
-    };
-    actions_other[0] = flow_action_port;
-
-    /* Terminate flow action list */
-    actions_other[1] = flow_action_end;
-
-    // rte_flow_validate(port_num, &attr_other, flow_kernel_pattern, actions_other, &flow_errors);
-
-    // kernel_flow = rte_flow_create(port_num, &attr_other, flow_kernel_pattern, actions_other, &flow_errors);
-
-    // if (!kernel_flow)
-    //     rte_exit(EXIT_FAILURE, "Failed to create Kernel flow rule %d, %s \n", flow_errors.type, flow_errors.message);
-  
-    // RTE_LOG(ERR, INIT, "Kernel flow created!\n");
-
-    return 0;
+	RTE_LOG(INFO, INIT, "Initialized port %u: MAC: %s\n", portid, buf);
 }
+
+// static int create_flow_for_port(uint16_t port_num){
+//     /* These would mostly be set from a function call */
+//     uint16_t q;
+//     struct rte_eth_dev_info dev_info;
+//     struct rte_eth_txconf txconf;
+
+//     if(!rte_eth_dev_is_valid_port(port_num))
+//         return -1;
+
+//     rte_eth_dev_info_get(port_num, &dev_info);
+
+//         /* Flow items */
+//     struct rte_flow_item flow_pattern[4]; /* 4 parts: ethernet, ipv4, udp, end */
+
+//     /* Ethernet Layer */
+//     static struct rte_flow_item eth_item = {RTE_FLOW_ITEM_TYPE_ETH, 0, 0, 0};
+//     flow_pattern[0] = eth_item;
+
+//     /* IPv4 Layer */
+//     struct rte_flow_item ipv4_item;
+//     ipv4_item.type = RTE_FLOW_ITEM_TYPE_IPV4;
+//     flow_pattern[1] = ipv4_item;
+
+//     /* UDP Layer */
+//     struct rte_flow_item udp_item;
+//     udp_item.type = RTE_FLOW_ITEM_TYPE_UDP;
+//     flow_pattern[2] = udp_item;
+
+//     /* Terminate the pattern list */
+//     static struct rte_flow_item end_item = {RTE_FLOW_ITEM_TYPE_END, 0, 0, 0};
+//     flow_pattern[3] = end_item;
+
+//     /* Flow actions */
+//     struct rte_flow_action flow_actions[2];
+//     static struct rte_flow_action_queue flow_action_queue_conf = {0}; // enqueue in queue 0
+//     static struct rte_flow_action flow_action_queue = {
+//         RTE_FLOW_ACTION_TYPE_QUEUE, &flow_action_queue_conf
+//     };
+//     flow_actions[0] = flow_action_queue;
+
+//     /* Terminate flow action list */
+//     static struct rte_flow_action flow_action_end = {RTE_FLOW_ACTION_TYPE_END, 0};
+//     flow_actions[1] = flow_action_end;
+
+//     /* Flow attributes */
+//     static struct rte_flow_attr flow_attrs;
+//     flow_attrs.ingress = 1;
+
+//     /* Initialize flow isolation to forward messages to kernel network stack */
+//     /* This will only work with bifurcated drivers */
+//     struct rte_flow_error flow_errors;
+//     rte_flow_isolate(port_num, 1, &flow_errors);
+
+//     /* Validate flow */
+//     /* This only works after configuring the port to forward to */
+//     int retval = rte_flow_validate(port_num, &flow_attrs, flow_pattern, flow_actions, &flow_errors);
+
+//     if(retval != 0){
+//         RTE_LOG(ERR, INIT, "Failed to validate DPDK flow rule %d, %s \n", flow_errors.type, flow_errors.message);
+//     }
+//     /* Start the Ethernet port. */
+//     //rte_eth_dev_start(port);
+
+//     /* Create the flow
+//      This will only work after the queue was started */
+//     dpdk_flow = rte_flow_create(port_num, &flow_attrs, flow_pattern, flow_actions, &flow_errors);
+
+//     if (!dpdk_flow)
+//         rte_exit(EXIT_FAILURE, "Failed to create DPDK flow rule %d, %s \n", flow_errors.type, flow_errors.message);
+  
+//     RTE_LOG(INFO, INIT, "DPDK flow created!\n");
+
+//     // struct rte_flow_item flow_kernel_pattern[2];
+//     // flow_kernel_pattern[0] = eth_item;
+//     // flow_kernel_pattern[1] = end_item;
+
+//     // struct rte_flow_attr attr_other;
+//     // attr_other.ingress = 1;
+
+//     // struct rte_flow_action actions_other[2];
+//     // static struct rte_flow_action_queue flow_action_kernel_queue_conf = {0};
+//     // flow_action_kernel_queue_conf.index = 1;
+//     // static struct rte_flow_action flow_action_kernel = {
+//     //     RTE_FLOW_ACTION_TYPE_QUEUE, &flow_action_kernel_queue_conf
+//     // };
+//     // actions_other[0] = flow_action_kernel;
+
+//     // /* Terminate flow action list */
+//     // actions_other[1] = flow_action_end;
+
+//     // //nvic_create(port_num);
+//     // rte_flow_validate(port_num, &attr_other, flow_kernel_pattern, actions_other, &flow_errors);
+
+//     // kernel_flow = rte_flow_create(port_num, &attr_other, flow_kernel_pattern, actions_other, &flow_errors);
+
+//     // if (!kernel_flow)
+//     //     rte_exit(EXIT_FAILURE, "Failed to create Kernel flow rule %d, %s \n", flow_errors.type, flow_errors.message);
+  
+//     // RTE_LOG(ERR, INIT, "Kernel flow created!\n");
+
+// //     return 0;
+// }
 
 /* Initialize a DPDK port */
 static int init_port(uint16_t port_num)
@@ -237,9 +256,12 @@ static int init_port(uint16_t port_num)
         return retval;
     }
 
+    RTE_LOG(INFO, INIT, "Port %d has %d max rx queue and %d max tx queue\n", port_num , dev_info.max_rx_queues, dev_info.max_tx_queues);
+    print_mac(port_num);
+
     const struct rte_eth_conf port_conf = {
         .rxmode = {
-            .mq_mode = ETH_MQ_RX_RSS,
+            .mq_mode = ETH_MQ_RX_NONE,
             .max_rx_pkt_len = RTE_MIN(JUMBO_FRAME_MAX_SIZE, dev_info.max_rx_pktlen),
             .split_hdr_size = 0,
             .offloads = (DEV_RX_OFFLOAD_CHECKSUM |
@@ -247,7 +269,11 @@ static int init_port(uint16_t port_num)
                          DEV_RX_OFFLOAD_JUMBO_FRAME),
         },
         .txmode = {
-            .offloads = DEV_TX_OFFLOAD_MULTI_SEGS,
+                .mq_mode = ETH_MQ_TX_NONE,
+		        .offloads = (DEV_TX_OFFLOAD_VLAN_INSERT
+				    | DEV_TX_OFFLOAD_IPV4_CKSUM
+				    | DEV_TX_OFFLOAD_UDP_CKSUM
+                    | DEV_TX_OFFLOAD_MULTI_SEGS),
         }
     };
 
@@ -257,7 +283,7 @@ static int init_port(uint16_t port_num)
         RTE_LOG(ERR, INIT, "Could not configure port %d\n", port_num);
         return retval;
     }
-    //RTE_LOG(INFO, INIT, "Configuration good on port %d\n", port_num);
+    RTE_LOG(INFO, INIT, "Configuration good on port %d\n", port_num);
 
     // Adjust the number of descriptors
     retval = rte_eth_dev_adjust_nb_rx_tx_desc(port_num, &rx_ring_size, &tx_ring_size);
@@ -265,7 +291,7 @@ static int init_port(uint16_t port_num)
         RTE_LOG(ERR, INIT, "Could not adjust rx/tx descriptors on port %d\n", port_num);
         return retval;
     }
-    //RTE_LOG(INFO, INIT, "Adjusted rx/tx descriptors on port %d\n", port_num);
+    RTE_LOG(INFO, INIT, "Adjusted rx/tx descriptors on port %d\n", port_num);
 
     // Setup the RX queues
     for (q = 0; q < rx_rings; q++) {
@@ -296,12 +322,21 @@ static int init_port(uint16_t port_num)
         return retval;
     }
 
+    //call port flow create
+    // retval = create_flow_for_port(PORT_RX);
+    // if(retval < 0){
+    //     RTE_LOG(ERR, INIT, "Cannot initialize flow for port %d\n", PORT_TX);
+    //     return -1;
+    // }
+    // RTE_LOG(INFO, INIT, "Made a flow for TX and RX to process UDP data for DPDK\n");
+
     // Start the DPDK port
     retval = rte_eth_dev_start(port_num);
     if (retval < 0) {
         RTE_LOG(ERR, INIT, "Could not start port %d\n", port_num);
         return retval;
     }
+    
     retval = rte_eth_dev_set_link_up(port_num);
     if (retval < 0) {
         RTE_LOG(ERR, INIT, "Could not set link up on port %d\n", port_num);
@@ -310,6 +345,7 @@ static int init_port(uint16_t port_num)
 
     check_port_link_status(port_num);    
     RTE_LOG(INFO, INIT, "Initialized and set up port %d.\n", port_num);
+
     return 0;
 }
 
@@ -382,10 +418,10 @@ static int init_exchange_slots(void)
     for (i = 0; i < NUM_SOCKETS_MAX; i++) {
         q_name = get_exch_ring_name(i, EXCH_RING_RX);
         exch_slots[i].rx_q = rte_ring_create(q_name, EXCH_RING_SIZE, socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
-        //RTE_LOG(INFO, INIT, "Allocated memory for exchange slots, rx queue name is %s for socket %d\n", q_name, socket_id);
+
         q_name = get_exch_ring_name(i, EXCH_RING_TX);
         exch_slots[i].tx_q = rte_ring_create(q_name, EXCH_RING_SIZE, socket_id, RING_F_SP_ENQ | RING_F_SC_DEQ);
-        //RTE_LOG(INFO, INIT, "Allocated memory for exchange slots, tx name is %s for socket %d\n", q_name, socket_id);
+
         if (exch_slots[i].rx_q == NULL || exch_slots[i].tx_q == NULL) {
             RTE_LOG(ERR, INIT, "Cannot create exchange RX/TX exchange rings (index %d)\n", i);
             return -1;
@@ -405,6 +441,15 @@ int udpdk_init(int argc, char *argv[])
         RTE_LOG(ERR, INIT, "Invalid arguments for UDPDK\n");
         return -1;
     }
+    
+    /* Initialize log */
+    rte_log_file = fopen(LOG_FILENAME, "w"); // Open log file in append mode
+    if (rte_log_file == NULL) {
+        /* Handle error opening log file */
+        return -1;
+    }
+
+    rte_openlog_stream(rte_log_file);
 
     // Start the secondary process
     poller_pid = fork();
@@ -445,13 +490,6 @@ int udpdk_init(int argc, char *argv[])
             //check_port_link_status(PORT_TX);
             RTE_LOG(INFO, INIT, "Using the same port for RX and TX\n");
         }
-        //call port flow create
-        retval = create_flow_for_port(PORT_RX);
-        if(retval < 0){
-            RTE_LOG(ERR, INIT, "Cannot initialize flow for port %d\n", PORT_TX);
-            return -1;
-        }
-        RTE_LOG(INFO, INIT, "Made a flow for TX and RX to process UDP data for DPDK\n");
 
         // Initialize IPC channel to synchronize with the poller
         retval = init_ipc_channel();
@@ -484,6 +522,8 @@ int udpdk_init(int argc, char *argv[])
         
         // Wait for the poller to be fully initialized
         RTE_LOG(INFO, INIT, "Waiting for the poller to complete its inialization...\n");
+
+        //TODO
         ipc_wait_for_poller();
         RTE_LOG(INFO, INIT, "Poller initialized\n");
 
@@ -538,6 +578,8 @@ void udpdk_cleanup(void)
         rte_eth_dev_stop(port_id);
         rte_eth_dev_close(port_id);
     }
+
+    fclose(rte_log_file);
 
     // Close all open sockets
     udpdk_close_all_sockets();

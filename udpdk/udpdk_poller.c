@@ -220,6 +220,7 @@ int poller_init(int argc, char *argv[])
     // Initialize EAL
     retval = rte_eal_init(argc, argv);
     if (retval < 0) {
+        printf("Cannot initialize EAL for poller, start the application again\n");
         RTE_LOG(ERR, POLLINIT, "Cannot initialize EAL for poller\n");
         return -1;
     }
@@ -335,7 +336,7 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
     rxq = &qconf->rx_queue;
 
     eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-    //RTE_LOG(INFO, POLLBODY, "packet type is %d, data len is %d, packet port is %d\n", m->packet_type, m->data_len, m->port);
+    RTE_LOG(INFO, POLLBODY, "packet type is %d, data len is %d, packet port is %d\n", m->packet_type, m->data_len, m->port);
 
     if (RTE_ETH_IS_IPV4_HDR(m->packet_type)) {
 
@@ -393,20 +394,20 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
     ip_dst_addr = get_ipv4_dst_addr(ip_hdr);
     addr.s_addr = udp_dst_port;
     
-    //RTE_LOG(INFO, POLLBODY, "UDP destination port is %d\n",htons(udp_dst_port));
+    RTE_LOG(INFO, POLLBODY, "UDP destination port is %d\n",htons(udp_dst_port));
     unsigned long networkAddress = htonl(ip_dst_addr);
     addr.s_addr = networkAddress;
 
     // Use inet_ntoa to convert network byte order to string
     char* ipString = inet_ntoa(addr);
     
-    //RTE_LOG(INFO, POLLBODY, "UDP IP destination adrress is (read in reverse) %s\n", ipString);
+    RTE_LOG(INFO, POLLBODY, "UDP IP destination adrress is (read in reverse) %s\n", ipString);
 
     // Find the sock_ids corresponding to the UDP dst port (L4 switching) and enqueue the packet to its queue
     udpdk_list_t *binds = btable_get_bindings(udp_dst_port);
     if (binds == NULL) {
         addr.s_addr = udp_dst_port;
-        RTE_LOG(WARNING, POLLBODY, "Dropping packet for port %d: no socket bound\n", htons(udp_dst_port));
+        RTE_LOG(INFO, POLLBODY, "Dropping packet for port %d: no socket bound\n", htons(udp_dst_port));
         return;
     }
     udpdk_list_iterator_t *it = list_iterator_new(binds, LIST_HEAD);

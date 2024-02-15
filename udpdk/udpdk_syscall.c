@@ -302,14 +302,14 @@ static int sendto_validate_args(int sockfd, const void *buf, size_t len, int fla
     // Ensure sockfd is not beyond max limit
     if (sockfd >= NUM_SOCKETS_MAX) {
         errno = ENOTSOCK;
-        RTE_LOG(INFO, SYSCALL, "Sockfd check failed\n");
+        RTE_LOG(ERR, SYSCALL, "Sockfd check failed\n");
         return -1;
     }
 
     // Check if the sockfd is valid
     if (!exch_zone_desc->slots[sockfd].used) {
         errno = EBADF;
-        RTE_LOG(INFO, SYSCALL,"Sockfd check valid failed\n");
+        RTE_LOG(ERR, SYSCALL,"Sockfd check valid failed\n");
         return -1;
     }
 
@@ -318,14 +318,14 @@ static int sendto_validate_args(int sockfd, const void *buf, size_t len, int fla
     // Check if flags are supported (atm none is supported)
     if (flags != 0) {
         errno = EINVAL;
-        RTE_LOG(INFO, SYSCALL,"Flags check failed\n");
+        RTE_LOG(ERR, SYSCALL,"Flags check failed\n");
         return -1;
     }
 
     // Check if the sender is specified
     if (dest_addr == NULL || addrlen == 0) {
         errno = EINVAL;
-        RTE_LOG(INFO, SYSCALL,"Sender check failed\n");
+        RTE_LOG(ERR, SYSCALL,"Sender check failed\n");
         return -1;
     }
     return 0;
@@ -343,7 +343,7 @@ ssize_t udpdk_sendto(int sockfd, const void *buf, size_t len, int flags,
 
     // Validate the arguments
     if (sendto_validate_args(sockfd, buf, len, flags, dest_addr, addrlen) < 0) {
-        RTE_LOG(INFO, SYSCALL,"Validate failed\n");
+        RTE_LOG(ERR, SYSCALL,"Validate sendto failed\n");
         return -1;
     }
 
@@ -420,7 +420,7 @@ ssize_t udpdk_sendto(int sockfd, const void *buf, size_t len, int flags,
         rte_pktmbuf_free(pkt);
         return -1;
     }
-    //RTE_LOG(INFO, SYSCALL, "Send %d bytes\n", (int)len);
+    RTE_LOG(DEBUG, SYSCALL, "Send %d bytes\n", (int)len);
     return len;
 }
 
@@ -471,22 +471,18 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
     struct rte_ether_hdr *eth_hdr;
     struct rte_ipv4_hdr *ip_hdr;
     struct rte_udp_hdr *udp_hdr;
+    
     //RTE_LOG(INFO, SYSCALL,"Into UDPDK recvfrom\n");
     // Validate the arguments
     if (recvfrom_validate_args(sockfd, buf, len, flags, src_addr, addrlen) < 0) {
         return -1;
     }
 
-    //RTE_LOG(INFO, SYSCALL,"All args validated\n");
-    //int i = 0;
     // Dequeue one packet (busy wait until one is available)
     while (ret < 0 && !interrupted) {
-        //if (i < 100)RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUE rx queue name is %s, size is %d\n", exch_slots[sockfd].rx_q->name, exch_slots[sockfd].rx_q->size);
         ret = rte_ring_dequeue(exch_slots[sockfd].rx_q, (void **)&pkt);
-        //RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUE RET IS %d\n",ret);
-        //i++;
     }
-    //RTE_LOG(INFO, SYSCALL,"RTE_RING_DEQUEUED from sockfd %d and ret is %d\n",sockfd,ret);
+
     if (interrupted) {
         RTE_LOG(INFO, SYSCALL, "Recvfrom returning due to signal\n");
         errno = EINTR;
@@ -544,11 +540,9 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
             break;
         }
     }
-    //RTE_LOG(INFO, SYSCALL,"Free mbuf\n");
     // Free the mbuf (with all the chained segments)
     rte_pktmbuf_free(pkt);
-    //RTE_LOG(INFO, SYSCALL,"Read %d bytes\n", (int)(len - bytes_left));
-    // Return how many bytes read
+    RTE_LOG(DEBUG, SYSCALL,"Read %d bytes\n", (int)(len - bytes_left));
     return len - bytes_left;
 }
 
