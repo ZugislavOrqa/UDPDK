@@ -59,6 +59,7 @@ extern struct rte_mempool *ipc_msg_pool;
 static pid_t poller_pid;
 FILE *rte_log_file;
 
+// flows if needed for later reasearch to make a dpdk flow for all UDP packets, and kernel flow for all other packet types
 // static struct rte_flow *dpdk_flow;
 // static struct rte_flow *kernel_flow;
 
@@ -116,6 +117,7 @@ static int init_mbuf_pools(void)
     return 0;
 }
 
+//Static print function to print MAC address of our port
 static void print_mac(uint16_t portid)
 {
 	struct rte_ether_addr eth_addr;
@@ -235,6 +237,11 @@ static int init_port(uint16_t port_num)
 {
     struct rte_eth_dev_info dev_info;
     // TODO add RSS support
+    /* one rx and tx queues for data handle, RSS support for more robust system should be added
+        For example:
+            1 rx queue is just for UDP packets, and all other packets can be handled with second rx queue
+            1 tx queue is just for UDP packets, and all other packets can be handled with second tx queue
+    */
     const uint16_t rx_rings = 1;
     const uint16_t tx_rings = 1;
     uint16_t rx_ring_size = NUM_RX_DESC_DEFAULT;
@@ -259,6 +266,7 @@ static int init_port(uint16_t port_num)
     RTE_LOG(INFO, INIT, "Port %d has %d max rx queue and %d max tx queue\n", port_num , dev_info.max_rx_queues, dev_info.max_tx_queues);
     print_mac(port_num);
 
+    //port configuration, some params can be changed like mq_mode etc.
     const struct rte_eth_conf port_conf = {
         .rxmode = {
             .mq_mode = ETH_MQ_RX_NONE,
@@ -315,14 +323,14 @@ static int init_port(uint16_t port_num)
         RTE_LOG(INFO, INIT, "Setup up TX queue %d on port %d\n", q, port_num);
     }
 
-    // Enable promiscuous mode
+    // Enable promiscuous mode, need to find out what promiscous mode enables
     retval = rte_eth_promiscuous_enable(port_num);
     if (retval < 0) {
         RTE_LOG(ERR, INIT, "Could not set port %d to promiscous mode\n", port_num);
         return retval;
     }
 
-    //call port flow create
+    //call port flow create, or for RSS handling
     // retval = create_flow_for_port(PORT_RX);
     // if(retval < 0){
     //     RTE_LOG(ERR, INIT, "Cannot initialize flow for port %d\n", PORT_TX);
@@ -337,12 +345,14 @@ static int init_port(uint16_t port_num)
         return retval;
     }
     
+    //Setup link between radio and our port
     retval = rte_eth_dev_set_link_up(port_num);
     if (retval < 0) {
         RTE_LOG(ERR, INIT, "Could not set link up on port %d\n", port_num);
         return retval;
     }
 
+    //print out link status and speed
     check_port_link_status(port_num);    
     RTE_LOG(INFO, INIT, "Initialized and set up port %d.\n", port_num);
 
