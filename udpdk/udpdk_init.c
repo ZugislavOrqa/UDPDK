@@ -56,9 +56,13 @@ extern char *secondary_argv[MAX_ARGC];
 extern struct rte_ring *ipc_app_to_pol;
 extern struct rte_ring *ipc_pol_to_app;
 extern struct rte_mempool *ipc_msg_pool;
+extern volatile int poller_alive;
+
 static pid_t poller_pid;
 FILE *rte_log_file;
 
+extern uint32_t cnt_send;
+extern uint32_t cnt_recv;
 // flows if needed for later reasearch to make a dpdk flow for all UDP packets, and kernel flow for all other packet types
 // static struct rte_flow *dpdk_flow;
 // static struct rte_flow *kernel_flow;
@@ -292,6 +296,14 @@ static int init_port(uint16_t port_num)
         return retval;
     }
     RTE_LOG(INFO, INIT, "Configuration good on port %d\n", port_num);
+
+    uint16_t mtu_size = IPV4_MTU_DEFAULT;
+    retval = rte_eth_dev_set_mtu(port_num, mtu_size);
+    if (retval != 0) {
+        RTE_LOG(ERR, INIT, "Could not configure mtu on port %d to %d\n", port_num, IPV4_MTU_DEFAULT);
+        return retval;
+    }
+    RTE_LOG(INFO, INIT, "Configuration of MTU to %d on port %d\n", mtu_size, port_num);
 
     // Adjust the number of descriptors
     retval = rte_eth_dev_adjust_nb_rx_tx_desc(port_num, &rx_ring_size, &tx_ring_size);
@@ -552,6 +564,7 @@ int udpdk_init(int argc, char *argv[])
 /* Signal UDPDK poller to stop */
 void udpdk_interrupt(int signum)
 {
+    RTE_LOG(INFO, INIT, "SEND %d packets\n RECV %d packets\n", cnt_send, cnt_recv);
     RTE_LOG(INFO, INTR, "Killing the poller process (%d)...\n", poller_pid);
     interrupted = 1;
 }

@@ -19,6 +19,8 @@ extern configuration config;
 extern struct exch_zone_info *exch_zone_desc;
 extern struct exch_slot *exch_slots;
 extern struct rte_mempool *tx_pktmbuf_pool;
+uint32_t cnt_send = 0;
+uint32_t cnt_recv = 0;
 
 static int socket_validate_args(int domain, int type, int protocol)
 {
@@ -420,7 +422,8 @@ ssize_t udpdk_sendto(int sockfd, const void *buf, size_t len, int flags,
         rte_pktmbuf_free(pkt);
         return -1;
     }
-    RTE_LOG(DEBUG, SYSCALL, "Send %d bytes\n", (int)len);
+    //RTE_LOG(INFO, SYSCALL, "Send %d bytes\n", (int)len);
+    cnt_send++;
     return len;
 }
 
@@ -484,7 +487,7 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
     }
 
     if (interrupted) {
-        RTE_LOG(INFO, SYSCALL, "Recvfrom returning due to signal\n");
+        //RTE_LOG(INFO, SYSCALL, "Recvfrom returning due to signal\n");
         errno = EINTR;
         return -1;
     }
@@ -542,7 +545,8 @@ ssize_t udpdk_recvfrom(int sockfd, void *buf, size_t len, int flags,
     }
     // Free the mbuf (with all the chained segments)
     rte_pktmbuf_free(pkt);
-    RTE_LOG(DEBUG, SYSCALL,"Read %d bytes\n", (int)(len - bytes_left));
+    //RTE_LOG(INFO, SYSCALL,"Read %d bytes\n", (int)(len - bytes_left));
+    cnt_recv++;
     return len - bytes_left;
 }
 

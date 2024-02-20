@@ -37,7 +37,7 @@
 #define RTE_LOGTYPE_POLLINTR RTE_LOGTYPE_USER1
 
 static volatile int poller_alive = 1;
-
+extern int interrupted;
 extern struct exch_zone_info *exch_zone_desc;
 extern struct exch_slot *exch_slots;
 extern udpdk_list_t **sock_bind_table;
@@ -336,7 +336,7 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
     rxq = &qconf->rx_queue;
 
     eth_hdr = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
-    RTE_LOG(INFO, POLLBODY, "packet type is %d, data len is %d, packet port is %d\n", m->packet_type, m->data_len, m->port);
+    //RTE_LOG(INFO, POLLBODY, "packet type is %d, data len is %d, packet port is %d\n", m->packet_type, m->data_len, m->port);
 
     if (RTE_ETH_IS_IPV4_HDR(m->packet_type)) {
 
@@ -354,7 +354,7 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
             // Handle this fragment (returns # of fragments if all already received, NULL otherwise)
             mo = rte_ipv4_frag_reassemble_packet(tbl, dr, m, tms, ip_hdr);
             if (mo == NULL){
-                RTE_LOG(INFO, POLLBODY, "More fragments needed...\n");
+                //RTE_LOG(INFO, POLLBODY, "More fragments needed...\n");
                 // More fragments needed...
                 return;
             }
@@ -394,14 +394,14 @@ static inline void reassemble(struct rte_mbuf *m, uint16_t portid, uint32_t queu
     ip_dst_addr = get_ipv4_dst_addr(ip_hdr);
     addr.s_addr = udp_dst_port;
     
-    RTE_LOG(INFO, POLLBODY, "UDP destination port is %d\n",htons(udp_dst_port));
+    //RTE_LOG(INFO, POLLBODY, "UDP destination port is %d\n",htons(udp_dst_port));
     unsigned long networkAddress = htonl(ip_dst_addr);
     addr.s_addr = networkAddress;
 
     // Use inet_ntoa to convert network byte order to string
     char* ipString = inet_ntoa(addr);
     
-    RTE_LOG(INFO, POLLBODY, "UDP IP destination adrress is (read in reverse) %s\n", ipString);
+    //RTE_LOG(INFO, POLLBODY, "UDP IP destination adrress is (read in reverse) %s\n", ipString);
 
     // Find the sock_ids corresponding to the UDP dst port (L4 switching) and enqueue the packet to its queue
     udpdk_list_t *binds = btable_get_bindings(udp_dst_port);
@@ -477,7 +477,7 @@ void poller_body(void)
     rx_mbuf_table = qconf->rx_queue.rx_mbuf_table;
     tx_mbuf_table = qconf->tx_queue.tx_mbuf_table;
 
-    while (poller_alive) {
+    while (poller_alive && !interrupted) {
         // Get current timestamp (needed for reassembly)
         cur_tsc = rte_rdtsc();
 

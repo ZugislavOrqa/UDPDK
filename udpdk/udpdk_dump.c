@@ -15,6 +15,7 @@
 
 #include "udpdk_dump.h"
 
+#define RTE_LOGTYPE_DUMP RTE_LOGTYPE_USER1
 
 /* Print the content of the packet in hex and ASCII */
 void udpdk_dump_payload(const char *payload, int len)
@@ -23,7 +24,7 @@ void udpdk_dump_payload(const char *payload, int len)
 	int i, j, i0;
 	const unsigned char *p = (const unsigned char *)payload;
 
-    printf("Dumping payload [len = %d]:\n", len);
+    RTE_LOG(INFO, DUMP,"Dumping payload [len = %d]:\n", len);
 
 	/* hexdump routine */
 	for (i = 0; i < len; ) {
@@ -36,7 +37,7 @@ void udpdk_dump_payload(const char *payload, int len)
 		for (j = 0; j < 16 && i < len; i++, j++)
 			sprintf(buf + 7 + j + 48, "%c",
 				isprint(p[i]) ? p[i] : '.');
-		printf("%s\n", buf);
+		RTE_LOG(INFO, DUMP,"%s\n", buf);
 	}
 }
 

@@ -59,7 +59,7 @@ int ipc_wait_for_app(void)
     int c = 0;
 
     while (rte_ring_dequeue(ipc_app_to_pol, &sync_msg) < 0) {
-        usleep(50000);
+        usleep(100000);
         c++;
         if (c > WAIT_MAX_CYCLES) {
             return -1;
@@ -76,7 +76,7 @@ int ipc_wait_for_poller(void)
     int c = 0;
 
     while (rte_ring_dequeue(ipc_pol_to_app, &sync_msg) < 0) {
-        usleep(50000);
+        usleep(100000);
         c++;
         if (c > WAIT_MAX_CYCLES) {
             return -1;
